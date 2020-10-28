@@ -1,0 +1,240 @@
+! Macro Export3D.MAC
+! Macro for the HPLC 3D ChemStation software, Rev A.06.xx or higher
+!
+! Author:  NW
+! Created: 18-Jan-2000
+! Updated: 18-Jan-2000
+! Updated: 09-Jan-2006 OE
+! Updated: 24-Jan-2007 for B.03.01 AS
+!
+! Export 3d DAD1.UV to MS Excel compatible comma separated value file
+!
+! Installation
+! 1. Copy \chem32\core\export3d.mac
+!         \chem32\core\export3d.hlp
+! 2. Add to  \chem32\core\user.mac this line:
+!    macro "export3d.mac"
+! 
+! Execution
+! By Menu
+!   Data Analysis - Tools - Export &3d DAD data...
+! 
+! Macro name list:
+!                  Export3d_Close
+!                  MyAddHook
+!                  Export3d_Param
+!                  Export3d_Menu
+!                  Export3D_PostDA
+!                  export_auto
+!                  Export3d_SetString
+!                  Export3d_GetString$
+
+!Initialization
+!*******************************************************************************
+Name Export3d_Close
+  Parameter FNum, Export3DReg$, CsvFile$
+  
+  On Error Print ""
+  !Close file number
+  Close #FNum
+  !Remove register
+  Evaluate "DelReg "+Export3DReg$
+  !Remove export file
+  Delete CsvFile$, Dontask
+  
+EndMacro
+!*******************************************************************************
+!General hook macro used for menu adding and sequenc automation
+Name MyAddHook
+Parameter MyHook$, MyCommand$
+
+  If RowByText(HOOK[1],MyHook$,,Command,"=",MyCommand$) = -1 Then
+    InsTabRow HOOK[1],MyHook$
+    SetTabText HOOK[1],MyHook$,TabHdrVal(HOOK[1],MyHook$,NumberOfRows),"Command",MyCommand$
+  EndIf
+  
+EndMacro
+!*******************************************************************************
+!The export engine
+Name Export3d_Param
+Parameter TimeFrom, TimeTo !Minutes
+Parameter WaveFrom, WaveTo !Nanometers
+Parameter CsvFile$
+Parameter TimeInTopRow Default 0 !Exported csv Matrix direction:
+!0=WavelengthInTopRow, 1=TimeInTopRow
+Local MatReg$
+Local iX, iY, nX, nY, Value
+Local FNum
+
+  FNum = 9
+	If _SequenceOn = 1 then
+		File _DataPath$ + _DataFile$
+	EndIf
+  !Four 'Do we have' silent returns, do not interrupt a running sequence
+  !Do we have a datafile
+  If RegSize(ChromReg)<1 Then
+    If _MethodOn=0 Then
+      Print Alert("First load a datafile.",3,"Export3d")
+      Return
+    EndIf  
+  EndIf  
+  !Default filename does not depend on any special directory
+  If CsvFile$="" Then
+    CsvFile$ = DADataPath$+DADataFile$+"\dad1.csv"
+  EndIf
+  !Close eventual left open filenumber, remove eventual the register
+  !And we remove eventual old data, no body should be confused with old data
+  Export3d_Close FNum,Export3DReg,CsvFile$
+  !Do we have a UV file
+  If FileStat(MODE,DaDataPath$+DaDataFile$+"\DAD1.UV")<>1 Then
+    If _MethodOn=0 Then
+      Print Alert("Your current datafile does not contain UV spectra.",3,"Export3d")
+      Return
+    EndIf  
+  EndIf
+  !This can consume large amount of memory with large dad1.uv
+  LoadSpectra ,TimeFrom:TimeTo,WaveFrom:WaveTo,Export3DReg
+  !Do we have an object?
+  If RegSize(Export3DReg)<1 Then
+    If _MethodOn=0 Then
+      Print Alert("Your current range selection does not contain data points.",3,"Export3d")
+      Return
+    EndIf  
+  EndIf
+  !Do we have data?
+  If DataCols(Export3DReg)*DataRows(Export3DReg)<1 Then
+    If _MethodOn=0 Then
+      Print Alert("Your current range selection does not contain data points.",3,"Export3d")
+      Return
+    EndIf  
+  EndIf
+  !Easy to make a transpose option available
+  If TimeInTopRow=1 Then
+    TransposeMat Export3DReg
+  EndIf
+  !Rows and Columns are defined opposite from expectation within EdDataTab:
+  !Rows are vertical, Columns are horizontal
+  nY = DataCols(Export3DReg) !Y points
+  nX = DataRows(Export3DReg) !X points
+  Open CsvFile$ For Output as #FNum
+    !Column Header
+    !X axis value is in Row=0! look at help for command 'Data'
+    For iY = 1 To nY
+      Value = Data(Export3DReg, 0, iY)
+      Print Using #FNum, ",#.#####",Value
+    Next iY
+    Print Using #FNum, "/"
+    !Rows
+    For iX = 1 To nX
+      !Y axis value
+      Value = Data(Export3DReg, -1, iX)
+      Print Using #FNum, "#.13#",Value
+      !Data values
+      For iY = 1 To nY
+        Value = Data(Export3DReg, iX, iY)
+        Print Using #FNum, ",#.13#",Value
+      Next iY
+      !Inform user about process time
+      Print "Row", iX, "of", nX
+      Print Using #FNum, "/"
+    Next iX
+  Close #FNum
+  DelReg Export3DReg
+EndMacro
+!*******************************************************************************
+MyAddHook "PreViewMenu","Export3D_Menu"
+
+!Method/Sequence Automation
+Name Export3D_PostDA
+Local PostDA
+
+  PostDA=Val(Export3d_GetString$("PostDA","0"))
+  If PostDA = 1 Then
+    Export3D
+  EndIf
+EndMacro
+MyAddHook "PostDA","Export3D_PostDA"
+!*******************************************************************************
+!Read stored parameters used in dialog. Also useful for automatic mode!
+Name export_auto
+Local CsvMode,CsvFile$
+Local TimeMode,TimeS,TimeE
+Local WaveMode,WaveS,WaveE
+Local TimeColumns
+
+  !Three file building modes
+  CsvMode  = 2
+  !Within datafile
+  If CsvMode=1 Then
+    CsvFile$=DaDataPath$+DaDataFile$+"\DAD1.CSV"
+  EndIf
+  !Within data sequence directory
+  If CsvMode=2 Then
+    CsvFile$=DaDataPath$+"Export3d"
+    If FileStat(MODE,CsvFile$)<>2 Then
+      MkDir CsvFile$
+    EndIf
+    CsvFile$=CsvFile$+"\"+DaDataFile$
+    CsvFile$=CsvFile$[1:Len(CsvFile$)-1]+"CSV"
+  EndIf
+  !Fixed location
+  If CsvMode=3 Then
+    CsvFile$=Export3d_GetString$("CsvFile3","C:\Export3d.csv")
+  EndIf
+
+  !Two time range modes  
+  TimeMode = 1
+  !Full range
+  TimeS  =0
+  TimeE  =0
+  !Specified range
+  If TimeMode=2 Then
+    TimeS  =Val(Export3d_GetString$("TimeS2","0"))
+    TimeE  =Val(Export3d_GetString$("TimeE2","0"))
+  EndIf
+
+  !Two wavelength modes  
+  WaveMode = 1
+  !Full range
+  WaveS  =0
+  WaveE  =0
+  !Specified range
+  If WaveMode=2 Then
+    WaveS  =Val(Export3d_GetString$("WaveS2","0"))
+    WaveE  =Val(Export3d_GetString$("WaveE2","0"))
+  EndIf
+
+  !Output table orientation Time or Wavelength in columns
+  TimeColumns = 0
+  !OK ready to export
+  Export3d_Param TimeS,TimeE,WaveS,WaveE,CsvFile$,TimeColumns
+  Print "Export3d finished"
+EndMacro
+!*******************************************************************************
+!General save settings macro
+Name Export3d_SetString
+Parameter Item$, String$
+
+  If ObjHdrType(_damethod, "Export3d")<>4 Then
+    NewTab _damethod, "Export3d"
+  EndIf
+  If TabHdrType(_damethod, "Export3d", Item$)=99 Then
+    NewTabHdrText _damethod, "Export3d", Item$, String$
+  Else
+    SetTabHdrText _damethod, "Export3d", Item$, String$
+  EndIf
+EndMacro
+!*******************************************************************************
+
+!General retrieve settings macro
+Name Export3d_GetString$
+Parameter Item$, Default$
+
+  If ObjHdrType(_damethod, "Export3d")=4 Then
+    If TabHdrType(_damethod, "Export3d", Item$)=0 Then
+      Return TabHdrText$(_damethod, "Export3d", Item$)
+    EndIf
+  EndIf
+  Return Default$
+EndMacro
+!*******************************************************************************
