@@ -5,4 +5,4 @@
 5. Use the filldown wizard to ‘filldown’ all lines with ‘EXPORTCSV2’ as the method.
 6. Reprocess the sequence to export your data as CSVs.
 
-The CSVs will be exported in a folder called ‘EXPORT3D’ inside the folder for the sequence that you’ve reprocessed.
+The CSVs will be exported in a folder called ‘EXPORT3D’ inside the folder for the sequence that you’ve reprocessed. (Warning: There is a bug that occasionally causes the macro to repeatedly export the first chromatogram in a sequence under different filenames. It is advisable to open the EXPORT3D folder and check that your converted chromatograms do not have identical file sizes. The bug can be usually be fixed by repeating the process outlined above from step 2).
